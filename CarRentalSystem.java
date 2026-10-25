@@ -1,79 +1,98 @@
-import java.io.*;
+import java.sql.*;
 import java.util.ArrayList;
 
 // CarRentalSystem.java
 // This class does the main work of the project.
-// It keeps the lists of cars, customers and bookings and saves them in text files.
+// It talks to the MySQL database using JDBC. Every SQL query is written as a
+// PreparedStatement; the ? marks are filled in with setString() / setInt().
 public class CarRentalSystem {
-    private ArrayList<Car> cars = new ArrayList<Car>();
-    private ArrayList<Customer> customers = new ArrayList<Customer>();
-    private ArrayList<Booking> bookings = new ArrayList<Booking>();
+    private Connection con;
 
-    public CarRentalSystem() {
-        File file = new File("cars.txt");
-        if (file.exists()) {
-            loadData();
-        } else {
-            loadSampleData();   // first time the program runs
+    public CarRentalSystem() throws SQLException {
+        con = DBConnection.getConnection();
+    }
+
+    public void close() {
+        try {
+            con.close();
+        } catch (SQLException e) {
+            System.out.println("Could not close the connection.");
         }
     }
 
-    // ---------- getters ----------
+    // ---------- login ----------
 
-    public ArrayList<Car> getCars() {
-        return cars;
-    }
-
-    public ArrayList<Customer> getCustomers() {
-        return customers;
-    }
-
-    public ArrayList<Booking> getBookings() {
-        return bookings;
-    }
-
-    // ---------- find methods (return null if not found) ----------
-
-    public Car findCar(String carId) {
-        for (Car c : cars) {
-            if (c.getCarId().equalsIgnoreCase(carId)) {
-                return c;
-            }
+    // true if the admin id and password are correct
+    public boolean checkAdmin(String adminId, String password) throws SQLException {
+        PreparedStatement ps = con.prepareStatement("SELECT password FROM admins WHERE admin_id = ?");
+        ps.setString(1, adminId);
+        ResultSet rs = ps.executeQuery();
+        boolean correct = false;
+        if (rs.next()) {
+            // compared in Java (not in SQL) so that the password is case sensitive
+            correct = rs.getString("password").equals(password);
         }
-        return null;
+        rs.close();
+        ps.close();
+        return correct;
     }
 
-    public Customer findCustomer(String customerId) {
-        for (Customer c : customers) {
-            if (c.getCustomerId().equalsIgnoreCase(customerId)) {
-                return c;
-            }
+    // ---------- helper methods that turn the rows of a query into objects ----------
+
+    private ArrayList<Car> readCars(PreparedStatement ps) throws SQLException {
+        ArrayList<Car> list = new ArrayList<Car>();
+        ResultSet rs = ps.executeQuery();
+        while (rs.next()) {
+            list.add(new Car(rs.getString("car_id"), rs.getString("name"), rs.getString("type"),
+                    rs.getInt("rent_per_day"), rs.getBoolean("available")));
         }
-        return null;
+        rs.close();
+        ps.close();
+        return list;
     }
 
-    public Booking findBooking(String bookingId) {
-        for (Booking b : bookings) {
-            if (b.getBookingId().equalsIgnoreCase(bookingId)) {
-                return b;
-            }
+    private ArrayList<Customer> readCustomers(PreparedStatement ps) throws SQLException {
+        ArrayList<Customer> list = new ArrayList<Customer>();
+        ResultSet rs = ps.executeQuery();
+        while (rs.next()) {
+            list.add(new Customer(rs.getString("customer_id"), rs.getString("name"),
+                    rs.getString("phone"), rs.getString("license_no")));
         }
-        return null;
+        rs.close();
+        ps.close();
+        return list;
+    }
+
+    private ArrayList<Booking> readBookings(PreparedStatement ps) throws SQLException {
+        ArrayList<Booking> list = new ArrayList<Booking>();
+        ResultSet rs = ps.executeQuery();
+        while (rs.next()) {
+            list.add(new Booking(rs.getString("booking_id"), rs.getString("car_id"),
+                    rs.getString("customer_id"), rs.getInt("days"), rs.getString("status")));
+        }
+        rs.close();
+        ps.close();
+        return list;
     }
 
     // ---------- car operations ----------
 
-    public String addCar(String carId, String name, String type, int rentPerDay) {
-        carId = clean(carId);
+    public String addCar(String carId, String name, String type, int rentPerDay) throws SQLException {
         if (findCar(carId) != null) {
             return "A car with this ID already exists.";
         }
-        cars.add(new Car(carId, clean(name), clean(type), rentPerDay, true));
-        saveData();
+        PreparedStatement ps = con.prepareStatement(
+                "INSERT INTO cars (car_id, name, type, rent_per_day, available) VALUES (?, ?, ?, ?, TRUE)");
+        ps.setString(1, carId);
+        ps.setString(2, name);
+        ps.setString(3, type);
+        ps.setInt(4, rentPerDay);
+        ps.executeUpdate();
+        ps.close();
         return "Car added successfully.";
     }
 
-    public String removeCar(String carId) {
+    public String removeCar(String carId) throws SQLException {
         Car car = findCar(carId);
         if (car == null) {
             return "Car not found.";
@@ -81,56 +100,112 @@ public class CarRentalSystem {
         if (!car.isAvailable()) {
             return "This car is on rent, so it cannot be removed.";
         }
-        cars.remove(car);
-        saveData();
+        PreparedStatement ps = con.prepareStatement("DELETE FROM cars WHERE car_id = ?");
+        ps.setString(1, car.getCarId());
+        ps.executeUpdate();
+        ps.close();
         return "Car removed successfully.";
     }
 
-    public ArrayList<Car> searchByType(String type) {
-        ArrayList<Car> result = new ArrayList<Car>();
-        for (Car c : cars) {
-            if (c.getType().equalsIgnoreCase(type)) {
-                result.add(c);
-            }
+    public Car findCar(String carId) throws SQLException {
+        PreparedStatement ps = con.prepareStatement("SELECT * FROM cars WHERE car_id = ?");
+        ps.setString(1, carId);
+        ArrayList<Car> list = readCars(ps);
+        if (list.size() == 0) {
+            return null;
         }
-        return result;
+        return list.get(0);
     }
 
-    public ArrayList<Car> searchByPrice(int maxPrice) {
-        ArrayList<Car> result = new ArrayList<Car>();
-        for (Car c : cars) {
-            if (c.getRentPerDay() <= maxPrice) {
-                result.add(c);
-            }
-        }
-        return result;
+    public ArrayList<Car> getAllCars() throws SQLException {
+        return readCars(con.prepareStatement("SELECT * FROM cars ORDER BY car_id"));
     }
 
-    public ArrayList<Car> getAvailableCars() {
-        ArrayList<Car> result = new ArrayList<Car>();
-        for (Car c : cars) {
-            if (c.isAvailable()) {
-                result.add(c);
-            }
-        }
-        return result;
+    public ArrayList<Car> getAvailableCars() throws SQLException {
+        return readCars(con.prepareStatement(
+                "SELECT * FROM cars WHERE available = TRUE ORDER BY car_id"));
+    }
+
+    public ArrayList<Car> searchByType(String type) throws SQLException {
+        PreparedStatement ps = con.prepareStatement("SELECT * FROM cars WHERE type = ? ORDER BY car_id");
+        ps.setString(1, type);
+        return readCars(ps);
+    }
+
+    public ArrayList<Car> searchByPrice(int maxPrice) throws SQLException {
+        PreparedStatement ps = con.prepareStatement(
+                "SELECT * FROM cars WHERE rent_per_day <= ? ORDER BY rent_per_day");
+        ps.setInt(1, maxPrice);
+        return readCars(ps);
     }
 
     // ---------- customer operations ----------
 
-    public String registerCustomer(String id, String name, String phone, String licenseNo) {
-        id = clean(id);
+    public String registerCustomer(String id, String name, String phone, String licenseNo) throws SQLException {
         if (findCustomer(id) != null) {
             return "A customer with this ID already exists.";
         }
-        customers.add(new Customer(id, clean(name), clean(phone), clean(licenseNo)));
-        saveData();
+        PreparedStatement ps = con.prepareStatement(
+                "INSERT INTO customers (customer_id, name, phone, license_no) VALUES (?, ?, ?, ?)");
+        ps.setString(1, id);
+        ps.setString(2, name);
+        ps.setString(3, phone);
+        ps.setString(4, licenseNo);
+        ps.executeUpdate();
+        ps.close();
         return "Customer registered successfully.";
+    }
+
+    // returns null if there is no customer with this id (used for the customer login)
+    public Customer findCustomer(String customerId) throws SQLException {
+        PreparedStatement ps = con.prepareStatement("SELECT * FROM customers WHERE customer_id = ?");
+        ps.setString(1, customerId);
+        ArrayList<Customer> list = readCustomers(ps);
+        if (list.size() == 0) {
+            return null;
+        }
+        return list.get(0);
+    }
+
+    public ArrayList<Customer> getAllCustomers() throws SQLException {
+        return readCustomers(con.prepareStatement("SELECT * FROM customers ORDER BY customer_id"));
     }
 
     // ---------- booking and return ----------
 
-    public String bookCar(String carId, String customerId, int days) {
+    public Booking findBooking(String bookingId) throws SQLException {
+        PreparedStatement ps = con.prepareStatement("SELECT * FROM bookings WHERE booking_id = ?");
+        ps.setString(1, bookingId);
+        ArrayList<Booking> list = readBookings(ps);
+        if (list.size() == 0) {
+            return null;
+        }
+        return list.get(0);
+    }
+
+    public ArrayList<Booking> getAllBookings() throws SQLException {
+        return readBookings(con.prepareStatement(
+                "SELECT * FROM bookings ORDER BY LENGTH(booking_id), booking_id"));
+    }
+
+    public ArrayList<Booking> getBookingsOfCustomer(String customerId) throws SQLException {
+        PreparedStatement ps = con.prepareStatement(
+                "SELECT * FROM bookings WHERE customer_id = ? ORDER BY LENGTH(booking_id), booking_id");
+        ps.setString(1, customerId);
+        return readBookings(ps);
+    }
+
+    private int countBookings() throws SQLException {
+        PreparedStatement ps = con.prepareStatement("SELECT COUNT(*) FROM bookings");
+        ResultSet rs = ps.executeQuery();
+        rs.next();
+        int count = rs.getInt(1);
+        rs.close();
+        ps.close();
+        return count;
+    }
+
+    public String bookCar(String carId, String customerId, int days) throws SQLException {
         Car car = findCar(carId);
         Customer customer = findCustomer(customerId);
 
@@ -140,14 +215,42 @@ public class CarRentalSystem {
         if (customer == null) {
             return "Customer not found. Please register the customer first.";
         }
-        if (!car.isAvailable()) {
-            return "Sorry, this car is already booked.";   // this stops double booking
-        }
 
-        String bookingId = "B" + (bookings.size() + 1);
-        bookings.add(new Booking(bookingId, car.getCarId(), customer.getCustomerId(), days, "Active"));
-        car.setAvailable(false);
-        saveData();
+        String bookingId = "B" + (countBookings() + 1);
+
+        // A transaction: the two changes below are saved together, or not at all.
+        con.setAutoCommit(false);
+        try {
+            // 1. Mark the car as booked. This changes a row only if the car is still
+            //    available, so the same car can never be booked twice (no double booking).
+            PreparedStatement ps = con.prepareStatement(
+                    "UPDATE cars SET available = FALSE WHERE car_id = ? AND available = TRUE");
+            ps.setString(1, car.getCarId());
+            int changed = ps.executeUpdate();
+            ps.close();
+
+            if (changed == 0) {
+                con.rollback();
+                return "Sorry, this car is already booked.";
+            }
+
+            // 2. Save the booking
+            ps = con.prepareStatement("INSERT INTO bookings "
+                    + "(booking_id, car_id, customer_id, days, status) VALUES (?, ?, ?, ?, 'Active')");
+            ps.setString(1, bookingId);
+            ps.setString(2, car.getCarId());
+            ps.setString(3, customer.getCustomerId());
+            ps.setInt(4, days);
+            ps.executeUpdate();
+            ps.close();
+
+            con.commit();
+        } catch (SQLException e) {
+            con.rollback();
+            throw e;
+        } finally {
+            con.setAutoCommit(true);
+        }
 
         return "Car booked successfully.\n\n"
                 + "Booking ID     : " + bookingId + "\n"
@@ -158,7 +261,7 @@ public class CarRentalSystem {
     }
 
     // daysUsed = number of days the customer really kept the car
-    public String returnCar(String bookingId, int daysUsed) {
+    public String returnCar(String bookingId, int daysUsed) throws SQLException {
         Booking booking = findBooking(bookingId);
         if (booking == null) {
             return "Booking not found.";
@@ -169,15 +272,35 @@ public class CarRentalSystem {
 
         Car car = findCar(booking.getCarId());
         Customer customer = findCustomer(booking.getCustomerId());
+        if (car == null || customer == null) {
+            return "The car or the customer of this booking is missing from the database.";
+        }
 
         // make the bill
         Bill bill = new Bill("BL" + booking.getBookingId().substring(1), booking.getBookingId());
         bill.calculateBill(car.getRentPerDay(), booking.getDays(), daysUsed);
 
-        // update the data
-        booking.returnCar();
-        car.setAvailable(true);
-        saveData();
+        // update the booking and the car together (one transaction)
+        con.setAutoCommit(false);
+        try {
+            PreparedStatement ps = con.prepareStatement(
+                    "UPDATE bookings SET status = 'Returned' WHERE booking_id = ?");
+            ps.setString(1, booking.getBookingId());
+            ps.executeUpdate();
+            ps.close();
+
+            ps = con.prepareStatement("UPDATE cars SET available = TRUE WHERE car_id = ?");
+            ps.setString(1, car.getCarId());
+            ps.executeUpdate();
+            ps.close();
+
+            con.commit();
+        } catch (SQLException e) {
+            con.rollback();
+            throw e;
+        } finally {
+            con.setAutoCommit(true);
+        }
 
         String text = "Car returned successfully.\n\n";
         text += "Customer     : " + customer.getName() + "\n";
@@ -189,94 +312,5 @@ public class CarRentalSystem {
         text += "------------------------------\n";
         text += bill.displayBill();
         return text;
-    }
-
-    // ---------- file handling ----------
-
-    // Commas are used to separate the values in the files, so remove them from the input
-    private String clean(String text) {
-        return text.replace(",", " ");
-    }
-
-    private ArrayList<String> readLines(String fileName) {
-        ArrayList<String> lines = new ArrayList<String>();
-        try {
-            BufferedReader br = new BufferedReader(new FileReader(fileName));
-            String line;
-            while ((line = br.readLine()) != null) {
-                if (!line.trim().equals("")) {
-                    lines.add(line);
-                }
-            }
-            br.close();
-        } catch (IOException e) {
-            System.out.println("Could not read " + fileName);
-        }
-        return lines;
-    }
-
-    private void writeLines(String fileName, ArrayList<String> lines) {
-        try {
-            PrintWriter pw = new PrintWriter(new FileWriter(fileName));
-            for (String line : lines) {
-                pw.println(line);
-            }
-            pw.close();
-        } catch (IOException e) {
-            System.out.println("Could not write " + fileName);
-        }
-    }
-
-    private void loadData() {
-        try {
-            for (String line : readLines("cars.txt")) {
-                String[] p = line.split(",");
-                cars.add(new Car(p[0], p[1], p[2], Integer.parseInt(p[3]), Boolean.parseBoolean(p[4])));
-            }
-            for (String line : readLines("customers.txt")) {
-                String[] p = line.split(",");
-                customers.add(new Customer(p[0], p[1], p[2], p[3]));
-            }
-            for (String line : readLines("bookings.txt")) {
-                String[] p = line.split(",");
-                bookings.add(new Booking(p[0], p[1], p[2], Integer.parseInt(p[3]), p[4]));
-            }
-        } catch (Exception e) {
-            System.out.println("A data file is not in the correct format: " + e.getMessage());
-        }
-    }
-
-    public void saveData() {
-        ArrayList<String> lines = new ArrayList<String>();
-        for (Car c : cars) {
-            lines.add(c.toFileString());
-        }
-        writeLines("cars.txt", lines);
-
-        lines = new ArrayList<String>();
-        for (Customer c : customers) {
-            lines.add(c.toFileString());
-        }
-        writeLines("customers.txt", lines);
-
-        lines = new ArrayList<String>();
-        for (Booking b : bookings) {
-            lines.add(b.toFileString());
-        }
-        writeLines("bookings.txt", lines);
-    }
-
-    // Some data so that the program is not empty on the first run
-    private void loadSampleData() {
-        cars.add(new Car("C101", "Swift", "Hatchback", 1500, true));
-        cars.add(new Car("C102", "Innova", "SUV", 3000, false));
-        cars.add(new Car("C103", "Baleno", "Hatchback", 1800, true));
-        cars.add(new Car("C104", "Verna", "Sedan", 2500, true));
-
-        customers.add(new Customer("CU101", "Arun", "9800000001", "DL1001"));
-        customers.add(new Customer("CU102", "Rahul", "9800000002", "DL1002"));
-
-        bookings.add(new Booking("B1", "C102", "CU101", 3, "Active"));
-        saveData();
     }
 }

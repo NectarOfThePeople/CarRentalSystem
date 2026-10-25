@@ -40,9 +40,4 @@ public class Customer {
         return String.format("%-8s %-14s %-12s %s",
                 customerId, name, phone, licenseNo);
     }
-
-    // One line of text that is saved in customers.txt
-    public String toFileString() {
-        return customerId + "," + name + "," + phone + "," + licenseNo;
-    }
 }

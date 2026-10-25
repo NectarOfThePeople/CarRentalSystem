@@ -36,11 +36,6 @@ public class Booking {
         return status;
     }
 
-    // Marks this booking as finished when the car is brought back
-    public void returnCar() {
-        status = "Returned";
-    }
-
     // Heading line used above the list of bookings
     public static String getHeading() {
         return String.format("%-11s %-8s %-12s %-6s %s",
@@ -51,10 +46,5 @@ public class Booking {
     public String displayBooking() {
         return String.format("%-11s %-8s %-12s %-6d %s",
                 bookingId, carId, customerId, days, status);
-    }
-
-    // One line of text that is saved in bookings.txt
-    public String toFileString() {
-        return bookingId + "," + carId + "," + customerId + "," + days + "," + status;
     }
 }

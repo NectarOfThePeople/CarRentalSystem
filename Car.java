@@ -35,10 +35,6 @@ public class Car {
         return available;
     }
 
-    public void setAvailable(boolean available) {
-        this.available = available;
-    }
-
     // Heading line used above the list of cars
     public static String getHeading() {
         return String.format("%-8s %-14s %-12s %-10s %s",
@@ -55,10 +51,5 @@ public class Car {
         }
         return String.format("%-8s %-14s %-12s %-10d %s",
                 carId, name, type, rentPerDay, status);
-    }
-
-    // One line of text that is saved in cars.txt
-    public String toFileString() {
-        return carId + "," + name + "," + type + "," + rentPerDay + "," + available;
     }
 }
