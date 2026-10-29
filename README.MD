@@ -1,4 +1,4 @@
-Objecitve Oriented Programming Project Made in Java
+Object Oriented Programming Project Made in Java
 
 
 
