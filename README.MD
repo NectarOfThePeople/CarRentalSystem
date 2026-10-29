@@ -1,3 +1,7 @@
+Objecitve Oriented Programming Project Made in Java
+
+
+
 CAR RENTAL SYSTEM (Java Swing + JDBC + MySQL)
 =============================================
 
@@ -65,3 +69,6 @@ Bill
 ----
 Total = rent per day x days booked + fine
 Fine  = Rs. 500 for every extra day the car is kept (see Bill.java)
+
+
+Hosted at the NectarOfThePeople Github
